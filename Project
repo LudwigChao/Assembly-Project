@@ -1,0 +1,799 @@
+TITLE MASM Template    					(Project.asm)
+
+INCLUDE Irvine32.inc
+
+main EQU start@0
+
+; Border
+
+TopBorder = 1
+BottomBorder = 30
+LeftBorder = 1
+RightBorder = 63
+
+; Earth
+
+Earth struct
+    body1  byte    "           *****************************************"
+    body2  byte    "       **************~~~~~~~~~~~****~~~~~~**************"
+    body3  byte    "    ******************~~~~~~~~~~~***~~~~~~~~~**************"
+    body4  byte    "  **************~~~****~~~~~~~~~~~~~~~~~~~~~~~~**************"
+    body5  byte    "**~~~~******~~~~~~~~~***~~~~~~~~~~~~~~~~~~~~~~~~~**********~~**"
+
+    XY coord <1,25>
+    ;Earth Color
+    attribute1 word 20 DUP(2), 12 DUP(1), 5 DUP(0Fh), 5 DUP(1), 10 DUP(2)
+    attribute2 word 21 DUP(2), 11 DUP(1), 4 DUP(0Fh), 6 DUP(1), 14 DUP(2)
+    attribute3 word 22 DUP(2), 11 DUP(1), 3 DUP(0Fh), 9 DUP(1), 14 DUP(2)
+    attribute4 word 16 DUP(2), 3 DUP(1), 4 DUP(2), 24 DUP(1), 14 DUP(2)
+    attribute5 word 2 DUP(2), 4 DUP(1), 6 DUP(2), 9 DUP(1), 3 DUP(2), 25 DUP(1), 10 DUP(2), 2 DUP(1), 2 DUP(2)
+Earth ends
+
+; Explosion
+ExplosionAnimation struct
+    body1 byte "*"
+    body2 byte "***"
+    body3 byte "* *"
+    body4 byte "*   *"
+    mode byte 0
+    XY coord <0,0>
+ExplosionAnimation ends
+
+
+; Plane
+
+PlaneWidth = 5
+
+plane struct
+    body1   byte    "^"
+    body2   byte    "/_\"
+    body3   byte    "/   \"
+    body4   byte    "/     \"
+    body5   byte    "/__[ ]__\"
+plane ends
+
+lplane struct
+    body1   byte    "/|"
+    body2   byte    "(||"
+    body3   byte    "/  \"
+    body4   byte    "/    \"
+    body5   byte    "/_|[___\"
+lplane ends
+
+rplane struct
+    body1   byte    "|\"
+    body2   byte    "||)"
+    body3   byte    "/  \"
+    body4   byte    "/    \"
+    body5   byte    "/___|]_\"
+rplane ends
+
+; Bullet
+bullet struct
+    body byte "|"
+    bool byte 0
+    XY coord <>
+bullet ends
+
+; Meteorite
+meteor struct
+    body1 byte "##"
+    body2 byte "##"
+    bool byte 0
+    XY coord<0,1>
+meteor ends
+
+.data
+
+; Move Mark
+
+BoolMoveLeft byte 0
+BoolMoveRight byte 0
+
+
+; Clear
+
+;Eraser for still
+eraser1 byte " "
+eraser2 byte "   "
+eraser3 byte "     "
+eraser4 byte "       "
+eraser5 byte "         "
+
+;eraser for moving right or left
+eraser6     byte "  "
+eraser7     byte "   "
+eraser8     byte "    "
+eraser9     byte "      "
+eraser10    byte "        "
+
+; my plane
+
+myplane plane <>
+mylplane lplane <>
+myrplane rplane <>
+mytest BYTE '1'
+pos coord <33,18>
+
+
+temp COORD <>
+
+; bullets
+bullet1 bullet<>
+bullet2 bullet<>
+bullet3 bullet<>
+bullet4 bullet<>
+bullet5 bullet<>
+
+; meteorite
+meteor1 meteor<>
+meteor2 meteor<>
+meteor3 meteor<>
+meteor4 meteor<>
+spawning_time byte 0
+BoolFlying byte 0
+
+; explosion
+explode1 ExplosionAnimation<>
+explode2 ExplosionAnimation<>
+explode3 ExplosionAnimation<>
+; handle
+outputHandle DWORD ?
+check DWORD ?
+
+;Earth
+
+MyEarth Earth<>
+
+
+
+
+
+.code
+main PROC
+
+    call clrscr
+
+    ; get output handle
+    invoke GetStdHandle, STD_OUTPUT_HANDLE
+    mov outputHandle, eax
+
+    call SetUp
+
+; game start
+Game :
+    call Background
+    call InputKey
+    call BulletFly
+    call SpawnMeteor
+    call MeteorFly
+    call Hit
+    call Explosion
+    jmp Game
+
+main ENDP
+
+; process
+
+InputKey proc uses eax
+    mov eax, 50     ; delay for 0.05 seconds
+    call Delay
+
+    call ReadKey
+    jz NoKey
+
+    cmp al, 'a'
+    je MoveLeft
+    cmp al, 'd'
+    je MoveRight
+    cmp dx, VK_SPACE
+    je Shoot
+    cmp dx, VK_ESCAPE
+    je quit
+
+; Did not input any key
+NoKey:
+
+    call ClearLastPosition
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myplane.body1, lengthof myplane.body1, pos, addr check
+    call GetTempXY
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myplane.body2, lengthof myplane.body2, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myplane.body3, lengthof myplane.body3, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myplane.body4, lengthof myplane.body4, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myplane.body5, lengthof myplane.body5, temp, addr check
+    mov BoolMoveLeft, 0
+    mov BoolMoveRight, 0
+
+    ret
+
+; input left key
+MoveLeft:
+
+    mov ax, pos.X
+    dec ax
+    cmp ax, PlaneWidth
+    jb HitLeftBorder
+
+    ; clear previous
+
+    call ClearLastPosition
+
+    ; go to next position
+    dec pos.X
+    call GetTempXY
+    dec temp.X
+    invoke WriteConsoleOutputCharacter, outputHandle, addr mylplane.body1, lengthof mylplane.body1, temp, addr check
+    inc temp.Y
+    dec temp.X
+    invoke WriteConsoleOutputCharacter, outputHandle, addr mylplane.body2, lengthof mylplane.body2, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr mylplane.body3, lengthof mylplane.body3, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr mylplane.body4, lengthof mylplane.body4, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr mylplane.body5, lengthof mylplane.body5, temp, addr check
+
+    ; change mark
+
+    mov BoolMoveLeft, 1
+    mov BoolMoveRight,0
+
+HitLeftBorder:
+    ret
+
+; input right key
+MoveRight:
+
+    mov ax, pos.X
+    inc ax
+    cmp ax, RightBorder-PlaneWidth+1
+    ja HitRightBorder
+
+    ; clear previous
+
+    call ClearLastPosition
+
+    ; go to next position
+    inc pos.X
+    call GetTempXY
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myrplane.body1, lengthof myrplane.body1, temp, addr check
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myrplane.body2, lengthof myrplane.body2, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myrplane.body3, lengthof myrplane.body3, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myrplane.body4, lengthof myrplane.body4, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myrplane.body5, lengthof myrplane.body5, temp, addr check
+
+    ; change mark
+
+    mov BoolMoveLeft, 0
+    mov BoolMoveRight,1
+
+HitRightBorder:
+    ret
+
+; shooting
+
+Shoot:
+    cmp bullet1.bool, 1
+    jne Shoot_Bullet1
+    ;cmp BoolBullet2, 1
+    ;jne Shoot_Bullet2
+    ;cmp BoolBullet3, 1
+    ;jne Shoot_Bullet3
+    ;cmp BoolBullet4, 1
+    ;jne Shoot_Bullet4
+    ;cmp BoolBullet5, 1
+    ;jne Shoot_Bullet5
+    ret
+Shoot_Bullet1:
+    mov bullet1.bool, 1
+    movzx eax, pos.X
+    mov bullet1.XY.X, ax
+    movzx eax, pos.Y
+    mov bullet1.XY.Y, ax
+    ret
+
+Shoot_Bullet2:
+    mov bullet2.bool, 1
+    movzx eax, pos.X
+    mov bullet2.XY.X, ax
+    movzx eax, pos.Y
+    mov bullet2.XY.Y, ax
+    ret
+
+Shoot_Bullet3:
+    mov bullet3.bool, 1
+    movzx eax, pos.X
+    mov bullet3.XY.X, ax
+    movzx eax, pos.Y
+    mov bullet3.XY.Y, ax
+    ret
+
+Shoot_Bullet4:
+    mov bullet4.bool, 1
+    movzx eax, pos.X
+    mov bullet4.XY.X, ax
+    movzx eax, pos.Y
+    mov bullet4.XY.Y, ax
+    ret
+
+Shoot_Bullet5:
+    mov bullet5.bool, 1
+    movzx eax, pos.X
+    mov bullet5.XY.X, ax
+    movzx eax, pos.Y
+    mov bullet5.XY.Y, ax
+    ret
+
+; exit
+quit:
+    exit
+
+InputKey endp
+
+BulletFly proc uses eax
+CheckBullet1:
+    cmp bullet1.bool, 1
+    je Bullet1_Flying
+
+CheckBullet2:
+    cmp bullet2.bool, 1
+    je Bullet2_Flying
+
+CheckBullet3:
+    cmp bullet3.bool, 1
+    je Bullet3_Flying
+
+CheckBullet4:
+    cmp bullet4.bool, 1
+    je Bullet4_Flying
+
+CheckBullet5:
+    cmp bullet5.bool, 1
+    je Bullet5_Flying
+    ret
+
+; first bullet flying motion
+
+Bullet1_Flying:
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser1, lengthof eraser1, bullet1.XY, addr check
+    mov ax, bullet1.XY.Y
+    dec ax
+    cmp ax, 1
+    jae Bullet1_NotYetTop
+    ; Bullet 1 is at top
+    mov bullet1.bool, 0
+    jmp CheckBullet2
+
+Bullet1_NotYetTop:
+    dec bullet1.XY.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr bullet1.body, lengthof bullet1.body, bullet1.XY, addr check
+    jmp CheckBullet2
+
+; second bullet flying motion
+
+Bullet2_Flying:
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser1, lengthof eraser1, bullet2.XY, addr check
+    mov ax, bullet2.XY.Y
+    dec ax
+    cmp ax, 1
+    jae Bullet2_NotYetTop
+    ; Bullet 2 is at top
+    mov bullet2.bool, 0
+    jmp CheckBullet3
+
+Bullet2_NotYetTop:
+    dec bullet2.XY.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr bullet2.body, lengthof bullet2.body, bullet2.XY, addr check
+    jmp CheckBullet3
+
+Bullet3_Flying:
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser1, lengthof eraser1, bullet3.XY, addr check
+    mov ax, bullet3.XY.Y
+    dec ax
+    cmp ax, 1
+    jae Bullet3_NotYetTop
+    ; Bullet 3 is at top
+    mov bullet3.bool, 0
+    jmp CheckBullet4
+
+Bullet3_NotYetTop:
+    dec bullet3.XY.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr bullet3.body, lengthof bullet3.body, bullet3.XY, addr check
+    jmp CheckBullet4
+
+Bullet4_Flying:
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser1, lengthof eraser1, bullet4.XY, addr check
+    mov ax, bullet4.XY.Y
+    dec ax
+    cmp ax, 1
+    jae Bullet4_NotYetTop
+    mov bullet4.bool, 0
+    jmp CheckBullet5
+
+Bullet4_NotYetTop:
+    dec bullet4.XY.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr bullet4.body, lengthof bullet4.body, bullet4.XY, addr check
+    jmp CheckBullet5
+
+Bullet5_Flying:
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser1, lengthof eraser1, bullet5.XY, addr check
+    mov ax, bullet5.XY.Y
+    dec ax
+    cmp ax , 1
+    jae Bullet5_NotYetTop
+    mov bullet5.bool, 0
+    ret
+
+Bullet5_NotYetTop:
+    dec bullet5.XY.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr bullet5.body, lengthof bullet5.body, bullet5.XY, addr check
+    ret
+
+BulletFly endp
+
+; spawning meteor
+
+SpawnMeteor proc uses eax
+    cmp meteor1.bool, 1
+    jne m1
+    ret
+m1:
+    mov eax, 53
+    call RandomRange
+    add ax, 5
+    mov meteor1.XY.X, ax
+    mov meteor1.XY.Y, -1
+    mov meteor1.bool, 1
+    ret
+SpawnMeteor endp
+
+; meteor flying
+
+MeteorFly proc uses eax
+
+CheckFlyingTime:
+    call TimeToFly
+    cmp BoolFlying, 1
+    je Fly
+    ret
+
+Fly:
+CheckMeteor1:
+    cmp meteor1.bool, 1
+    je m1Flying
+    ret
+
+m1Flying:
+    movzx eax, meteor1.XY.X
+    mov temp.X, ax
+    movzx eax, meteor1.XY.Y
+    mov temp.Y, ax
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser6, lengthof eraser6, temp, addr check
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser6, lengthof eraser6, temp, addr check
+    mov ax, meteor1.XY.Y
+    inc ax
+    cmp ax, 23
+    jbe NotYetBottom
+    mov meteor1.bool, 0
+    ret
+NotYetBottom:
+    inc meteor1.XY.Y
+    movzx eax, meteor1.XY.X
+    mov temp.X, ax
+    movzx eax, meteor1.XY.Y
+    mov temp.Y, ax
+    invoke WriteConsoleOutputCharacter, outputHandle, addr meteor1.body1, lengthof meteor1.body1, temp, addr check
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr meteor1.body2, lengthof meteor1.body2, temp, addr check
+    ret
+MeteorFly endp
+
+; hit
+
+Hit proc uses eax ebx edx
+
+CheckMeteor1Flying:
+    cmp meteor1.bool, 1
+    je Meteor1IsFlying
+    ret
+Meteor1IsFlying:
+; check bullet1
+    mov ax, bullet1.XY.Y
+    mov bx, meteor1.XY.Y
+    mov dx, bx
+    inc bx
+    cmp ax, bx
+    je SameAltitude
+    cmp ax, dx
+    je SameAltitude
+    ret
+SameAltitude:
+    mov ax, bullet1.XY.X
+    mov bx, meteor1.XY.X
+    mov dx, bx
+    inc dx
+    cmp ax, bx
+    je SameXY
+    cmp ax, dx
+    je SameXY
+    ret
+SameXY:
+    mov bullet1.bool, 0
+    mov meteor1.bool, 0
+    movzx eax, meteor1.XY.X
+    mov temp.X, ax
+    movzx eax, meteor1.XY.Y
+    mov temp.Y, ax
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser6, lengthof eraser6, temp, addr check
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser6, lengthof eraser6, temp, addr check
+
+CheckExplosion:
+    cmp explode1.mode, 0
+    je explosion1
+    ret
+explosion1:
+    mov explode1.mode, 1
+    movzx eax, bullet1.XY.X
+    mov explode1.XY.X, ax
+    movzx eax, bullet1.XY.Y
+    mov explode1.XY.Y, ax
+    ret
+
+; check bullet2
+
+; check bullet3
+
+; check bullet4
+
+; check bullet5
+    ret
+Hit endp
+
+; explosion
+
+Explosion proc
+
+CheckExplosion1:
+    cmp explode1.mode, 0
+    jne Exploding
+    ret
+Exploding:
+    movzx eax, explode1.XY.X
+    mov temp.X, ax
+    movzx eax, explode1.XY.Y
+    mov temp.Y, ax
+    cmp explode1.mode, 1
+    je Ex1M1
+    cmp explode1.mode, 2
+    je Ex1M2
+    cmp explode1.mode, 3
+    je Ex1M3
+    cmp explode1.mode, 4
+    je Ex1M4
+    ret
+Ex1M1:
+    invoke WriteConsoleOutputCharacter, outputHandle, addr explode1.body1, lengthof explode1.body1, temp, addr check
+    inc explode1.mode
+    ret
+Ex1M2:
+    ; clear last explosion
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser1, lengthof eraser1, temp, addr check
+
+    dec temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr explode1.body1, lengthof explode1.body1, temp, addr check
+    inc temp.Y
+    dec temp.X
+    invoke WriteConsoleOutputCharacter, outputHandle, addr explode1.body2, lengthof explode1.body2, temp, addr check
+    inc temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr explode1.body1, lengthof explode1.body1, temp, addr check
+    inc explode1.mode
+    ret
+Ex1M3:
+    ; clear last explosion
+    dec temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser1, lengthof eraser1, temp, addr check
+    inc temp.Y
+    dec temp.X
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser7, lengthof eraser7, temp, addr check
+    inc temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser1, lengthof eraser1, temp, addr check
+
+    sub temp.Y, 2
+    dec temp.X
+    invoke WriteConsoleOutputCharacter, outputHandle, addr explode1.body3, lengthof explode1.body3, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr explode1.body4, lengthof explode1.body4, temp, addr check
+    inc temp.Y
+    inc temp.X
+    invoke WriteConsoleOutputCharacter, outputHandle, addr explode1.body3, lengthof explode1.body3, temp, addr check
+    inc explode1.mode
+    ret
+Ex1M4:
+    ; clear last explosion
+    dec temp.Y
+    dec temp.X
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser7, lengthof eraser7, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser9, lengthof eraser9, temp, addr check
+    inc temp.Y
+    inc temp.X
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser7, lengthof eraser7, temp, addr check
+    mov explode1.mode, 0
+    ret
+
+
+
+
+    ret
+Explosion endp
+
+ClearLastPosition proc uses eax
+
+    call GetTempXY
+    ; check if last step is left
+    cmp BoolMoveLeft, 1
+    je LastMoveWasLeft
+    ; check if last step is right
+    cmp BoolMoveRight, 1
+    je LastMoveWasRight
+
+    ; if the plane stand still last second
+DidNotMoveLastSecond:
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser1, lengthof eraser1, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser2, lengthof eraser2, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser3, lengthof eraser3, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser4, lengthof eraser4, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser5, lengthof eraser5, temp, addr check
+    jmp finish
+
+    ; if the plane move left last second
+
+LastMoveWasLeft:
+    dec temp.X
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser6, lengthof eraser6, temp, addr check
+    inc temp.Y
+    dec temp.X
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser7, lengthof eraser7, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser8, lengthof eraser8, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser9, lengthof eraser9, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser10, lengthof eraser10, temp, addr check
+    jmp finish
+
+    ; if the plane move right last second
+
+LastMoveWasRight:
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser6, lengthof eraser6, temp, addr check
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser7, lengthof eraser7, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser8, lengthof eraser8, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser9, lengthof eraser9, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr eraser10, lengthof eraser10, temp, addr check
+    jmp finish
+
+finish:
+    ret
+ClearLastPosition endp
+
+SetUp proc uses eax
+
+    ; print plane
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myplane.body1, lengthof myplane.body1, pos, addr check
+    call GetTempXY
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myplane.body2, lengthof myplane.body2, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myplane.body3, lengthof myplane.body3, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myplane.body4, lengthof myplane.body4, temp, addr check
+    dec temp.X
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr myplane.body5, lengthof myplane.body5, temp, addr check
+
+
+    ret
+
+SetUp endp
+
+Background proc
+
+    ; print earth
+    movzx eax, MyEarth.XY.X
+    mov temp.X, ax
+    movzx eax, MyEarth.XY.Y
+    mov temp.Y, ax
+    invoke WriteConsoleOutputCharacter, outputHandle, addr MyEarth.body1, lengthof MyEarth.body1, temp, addr check
+    invoke WriteConsoleOutputAttribute, outputHandle, addr MyEarth.attribute1, lengthof MyEarth.body1, temp, addr check
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr MyEarth.body2, lengthof MyEarth.body2, temp, addr check
+    invoke WriteConsoleOutputAttribute, outputHandle, addr MyEarth.attribute2, lengthof MyEarth.body2, temp, addr check
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr MyEarth.body3, lengthof MyEarth.body3, temp, addr check
+    invoke WriteConsoleOutputAttribute, outputHandle, addr MyEarth.attribute3, lengthof MyEarth.body3, temp, addr check
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr MyEarth.body4, lengthof MyEarth.body4, temp, addr check
+    invoke WriteConsoleOutputAttribute, outputHandle, addr MyEarth.attribute4, lengthof MyEarth.body4, temp, addr check
+    inc temp.Y
+    invoke WriteConsoleOutputCharacter, outputHandle, addr MyEarth.body5, lengthof MyEarth.body5, temp, addr check
+    invoke WriteConsoleOutputAttribute, outputHandle, addr MyEarth.attribute5, lengthof MyEarth.body5, temp, addr check
+    ret
+
+Background endp
+
+; get x and y coordinate into temp
+
+GetTempXY proc uses eax
+    movzx eax, pos.X
+    mov temp.X, ax
+    movzx eax, pos.Y
+    mov temp.Y, ax
+    ret
+GetTempXY endp
+
+TimeToFly proc uses eax ebx
+    inc spawning_time
+    movzx ax, spawning_time
+    mov bl, 5
+    div bl
+    cmp ah, 0
+    je DivideByThree
+    mov BoolFlying, 0
+CheckTwoMinutes:
+    cmp spawning_time, 120
+    je TwoMinutes
+    ret
+TwoMinutes:
+    mov spawning_time, 0
+    ret
+DivideByThree:
+    mov BoolFlying, 1
+    jmp CheckTwoMinutes
+TimeToFly endp
+
+END main
